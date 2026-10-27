@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "Apple Pickup Watcher",
+  "version": "1.1",
+  "description": "Watches Apple Store in-store pickup availability and pushes alerts via ntfy / Pushover.",
+  "host_permissions": [
+    "https://www.apple.com/*",
+    "https://ntfy.sh/*",
+    "https://api.pushover.net/*",
+    "https://hc-ping.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.apple.com/shop/buy-iphone/*"
+      ],
+      "js": [
+        "main.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://www.apple.com/shop/buy-iphone/*"
+      ],
+      "js": [
+        "bridge.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "permissions": [
+    "alarms",
+    "storage"
+  ]
+}
