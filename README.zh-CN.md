@@ -15,9 +15,9 @@
 
 ## 使用前请知道
 
-- 这是非官方工具，依赖 Apple 官网未公开的接口。Apple 改版后可能失效。
-- 查询太频繁会被 Apple 暂时限制（表现为状态码 541，连正常浏览官网都看不到取货信息）。默认 5 分钟一次，请不要调得太低。
-- 购买页标签页必须一直开着，电脑不能睡眠。
+- 这是非官方工具，依赖 Apple 官网未公开的接口，Apple 改版后可能失效。每次检查都先用 `/shop/retail/pickup-message`，只有新接口返回异常内容时，才会临时试一次旧接口 `/shop/fulfillment-messages`。如果是被 Apple 限制（状态码 541），它会直接等待，不会再多发一个请求去试旧接口。
+- 查询太频繁会被 Apple 暂时限制（表现为状态码 541，连正常浏览官网都看不到取货信息）。默认大约 10 分钟一次，间隔随机。作者实测用一个查询中心、大约每 5 分钟一次，连续跑了约两天，只偶尔被拦截。不建议低于 5 分钟。
+- Chrome 要一直开着，电脑不能睡眠。购买页标签页被关掉或者 Chrome 重启后，扩展会自动重新打开它。
 - 目前只支持美国 Apple 官网的 iPhone 购买页。
 
 ---
@@ -39,8 +39,8 @@
 
 1. Chrome 打开 Apple 官网，进入 iPhone 购买页，选好型号、颜色、容量。
 2. 按 **F12**（Mac 上按 Command + Option + I），切到 **网络（Network）** 标签。
-3. 在过滤框输入 `fulfillment`，然后按 **F5** 刷新页面。
-4. 点开出现的 `fulfillment-messages` 请求，在请求网址里找到 `parts.0=` 后面那串，比如 `MK1E4LL/A`。网址里如果显示成 `MK1E4LL%2FA`，其中 `%2F` 就是 `/`。
+3. 在过滤框输入 `fulfillment`，然后按 **F5** 刷新页面。如果什么都没出现，换成输入 `pickup-message` 试试。
+4. 点开出现的 `fulfillment-messages`（或 `pickup-message`）请求，在请求网址里找到 `parts.0=` 后面那串，比如 `MK1E4LL/A`。网址里如果显示成 `MK1E4LL%2FA`，其中 `%2F` 就是 `/`。
 5. 想同时盯多个颜色或容量，就切换配置后重复一次。
 
 填进 `main.js`：
@@ -54,12 +54,13 @@ const PARTS = ["MK1E4LL/A", "MK1F4LL/A"];
 同样在 `main.js` 里修改 `CENTERS`：
 
 ```js
-const CENTERS = [{ location: "10001" }, { location: "19103" }];
+const CENTERS = [{ location: "10001" }];
 ```
 
 - 每个中心，Apple 会返回离它最近的 **12 家** 门店。
-- 填一个你所在地的邮编就够用。想覆盖更远的门店，再加一个那边的邮编，结果会自动合并去重。
-- 中心越多，每轮请求越多，被限制的风险越高。建议不超过 2 到 3 个。
+- 每个中心每次检查要发一个请求，所以**建议只用一个中心**。
+- 想同时覆盖两个地区，可以先试一个位于两地中间的邮编。启动时收到的 “Watcher started” 通知里会写覆盖了几家门店，在购买页按 F12 打开控制台，`[Apple Watcher] ... Stores:` 开头的那一行会列出具体是哪些店。
+- 也可以加多个中心，比如 `[{ location: "10001" }, { location: "19103" }]`，结果会自动合并去重，但每多一个中心就多一个请求，更容易被限制。
 
 ## 第四步：设置手机通知
 
@@ -123,9 +124,9 @@ ntfy 和 Pushover 可以同时开：所有消息都会走 ntfy，只有「有货
 |---|---|
 | Apple watcher started | 打开购买页、第一次查询成功时 |
 | Apple watcher still running | 每 12 小时一次，告诉你还在正常工作（可在 `background.js` 改 `HEARTBEAT_HOURS`） |
-| Apple watcher stopped | 购买页标签页被关掉；或者浏览器开着，但连续一段时间（默认约 20 分钟）没有成功查询 |
+| Apple watcher stopped | 连续一段时间（默认约 35 分钟）没有成功查询，并且自动刷新页面也没修好 |
 | Apple watcher resumed | 中断后又恢复正常 |
-| Apple watcher blocked | 连续 3 次被 Apple 拦截 |
+| Apple watcher blocked | 连续 3 次被 Apple 拦截（之后会降低频率继续重试） |
 
 **ntfy 的额度：** ntfy.sh 对免费用户有速率限制，具体数字以官网为准。这个扩展正常情况下每天只发几条，不会碰到限制。
 
@@ -136,8 +137,8 @@ ntfy 和 Pushover 可以同时开：所有消息都会走 ntfy，只有「有货
 1. 打开 healthchecks.io，注册并登录。
 2. 点 **Add Check** 创建一个检查，名字随便填，比如 `apple-watcher`。
 3. 修改时间设置（Change Schedule 或 Period / Grace 设置）：
-   - **Period** 设为 `5 minutes`（和 `main.js` 里的 `INTERVAL_MIN` 一样）
-   - **Grace** 设为 `15 minutes`
+   - **Period** 设为 `10 minutes`（和 `main.js` 里的 `INTERVAL_MIN` 一样）
+   - **Grace** 设为 `20 minutes`
 4. 复制这个检查的 **Ping URL**，形如 `https://hc-ping.com/xxxxxxxx-xxxx-...`。
 5. 打开左上角项目里的 **Integrations**，找到 **ntfy**，点 **Add Integration**：
    - Topic 填你的 ntfy 频道名
@@ -149,7 +150,7 @@ ntfy 和 Pushover 可以同时开：所有消息都会走 ntfy，只有「有货
    const HEALTHCHECK_URL = "https://hc-ping.com/你的那一串";
    ```
 
-之后电脑断网或睡眠超过约 20 分钟，你会收到 Healthchecks.io 发来的 “down” 通知；恢复后会收到 “up” 通知。Healthchecks.io 也支持 Pushover，想让离线提醒也响铃，可以在 Integrations 里加 Pushover。
+之后电脑断网或睡眠超过约 30 分钟，你会收到 Healthchecks.io 发来的 “down” 通知；恢复后会收到 “up” 通知。Healthchecks.io 也支持 Pushover，想让离线提醒也响铃，可以在 Integrations 里加 Pushover。
 
 ## 第五步：启动和测试
 
@@ -157,7 +158,7 @@ ntfy 和 Pushover 可以同时开：所有消息都会走 ntfy，只有「有货
 2. 打开第二步里那个 Apple iPhone 购买页。
 3. 等大约 20 秒：
    - 标签页标题前面出现 `[No stock 01:04:36]` 这样的状态，说明查询成功。
-   - 手机收到「Watcher started. Checking N stores.」
+   - 手机收到「Watcher started. Checking N stores (endpoint: pickup).」。`pickup` 表示新接口可用，`fulfillment` 表示用的是旧接口。
 4. **测试有货通知**：在 **Apple 购买页** 上按 F12 → 控制台（Console），粘贴下面这行回车：
    ```js
    window.postMessage({__asw:true,title:"iPhone in stock",msg:"test"},"*")
@@ -183,9 +184,51 @@ Chrome 设置 → 性能 → 在 **“始终让以下网站保持活跃状态”
 
 ## 日常使用
 
-- 购买页标签页一直开着，别关，也别在里面跳转到别的页面。建议单独放一个 Chrome 窗口，最小化。
-- 页面每 15 分钟会自动刷新一次，这是正常的。
-- 收到有货通知后尽快下单，热门配置通常几分钟就会被抢完。
+- 购买页标签页放着别动就行，建议单独放一个 Chrome 窗口并最小化。不小心关掉了，扩展会在后台重新打开。
+- **想停止检测，请在 `chrome://extensions` 把扩展关掉。** 只关标签页没用，它会被重新打开。
+- 扩展大约每 10 分钟检查一次，页面大约每小时自动刷新一次（如果用的是旧接口，大约每 20 分钟），具体时间是故意随机的。
+- 检测停了一段时间，扩展会先自己刷新或重新打开一次页面，修不好才通知你。
+- 你可以另开一个 Apple 购买页标签页正常购物。同一时间只有一个购买页标签页负责检测，不会增加请求。
+- 收到有货通知后点一下就能打开购买页，尽快下单，热门配置通常几分钟就会被抢完。提前在 Apple Store App 里登录并保存好付款方式，能省不少时间。
+
+## 补货历史
+
+扩展会记录每家门店、每个型号什么时候开始有货、什么时候卖完。点 Chrome 工具栏上的扩展图标就能打开。如果工具栏上看不到图标，点拼图图标把 Apple Pickup Watcher 固定出来。也可以在扩展的 **详情 → 扩展程序选项** 里打开。页面内容包括：
+
+- 按一天中每个小时统计的补货次数图，能看出附近门店一般几点补货；
+- 每次补货的明细表：门店、零件号、开始有货时间、卖完时间、持续了多久；
+- 导出 CSV 和清空记录的按钮。
+
+记录只保存在你自己的浏览器里，不会发送到任何地方。只有扩展在运行、没被限制的时间段才会有记录。
+
+## 设置一览
+
+所有设置都在两个文件顶部 “edit this part only” 的区块里。
+
+**`main.js`**
+
+| 设置 | 默认值 | 作用 |
+|---|---|---|
+| `PARTS` | 两个示例零件号 | 要监控的型号（第二步） |
+| `CENTERS` | `[{ location: "10001" }]` | 查询中心，每个中心覆盖最近的 12 家门店（第三步） |
+| `CPPART` | `"UNLOCKED/US"` | 运营商版本，一般不用改 |
+| `INTERVAL_MIN` | `10` | 平均每隔几分钟检查一次，建议不低于 5 |
+| `JITTER` | `0.3` | 每次等待时间随机浮动最多 ±30% |
+| `RELOAD_MIN` | `60` | 平均每隔几分钟刷新一次页面 |
+| `RELOAD_MIN_FALLBACK` | `20` | 上一次检查用到旧接口时的页面刷新间隔 |
+
+**`background.js`**
+
+| 设置 | 默认值 | 作用 |
+|---|---|---|
+| `NTFY_TOPIC` | `""` | ntfy 频道名，留空表示不用 ntfy |
+| `PUSHOVER_TOKEN`、`PUSHOVER_USER` | `""` | Pushover 密钥，都留空表示不用 Pushover |
+| `PUSHOVER_SOUND` | `"persistent"` | Pushover 提示音，上传 `alarm30.mp3` 后改成 `"alarm30"` |
+| `HEALTHCHECK_URL` | `""` | Healthchecks.io 的 Ping URL，留空表示不用 |
+| `HEARTBEAT_HOURS` | `12` | 每隔几小时发一次 “still running” |
+| `AUTO_REOPEN` | `true` | 购买页标签页被关掉或 Chrome 重启后自动重新打开 |
+
+改完任何设置后，到 `chrome://extensions` 刷新扩展，再刷新购买页。
 
 ## 常见问题
 
@@ -195,11 +238,11 @@ Chrome 设置 → 性能 → 在 **“始终让以下网站保持活跃状态”
 **怎么确认自己有没有被 Apple 限制访问？**
 用 Chrome 正常打开 iPhone 购买页，看 **Add to Bag** 按钮上方。如果同时显示 **Delivers to ...**（配送）和 **Pickup: ...**（取货）两行信息，就说明一切正常。如果这两行都没有，只剩一个 Add to Bag 按钮，说明你的电脑或网络被 Apple 暂时限制了，先停用扩展，过一段时间再试。
 
-**标签页标题显示 `[Blocked ...]` 怎么办？**
-扩展会在 1 分钟后自动刷新页面重试，连续 3 次失败会推送提醒。如果一直这样，先停用扩展。然后按上一个问题的方法检查是否被 Apple 限制。如果被限制了，只能等一段时间再试。恢复后把 `INTERVAL_MIN` 调大一些。
+**标签页标题显示 `[Blocked ...]` 或 `[Waiting until ...]` 怎么办？**
+扩展会自动等待后重试，每次等待时间逐渐变长（5、10、20 分钟，之后每 30 分钟一次），等待期间不发任何请求。连续 3 次失败会推送提醒。想立刻清除等待状态重新开始，可以关掉购买页标签页，新开一个标签页重新打开。如果一直这样，先停用扩展。然后按上一个问题的方法检查是否被 Apple 限制。如果被限制了，只能等一段时间再试。恢复后把 `INTERVAL_MIN` 调大一些。
 
 **标题一直没变化？**
-确认修改文件后点了扩展的刷新按钮，并刷新了购买页。在购买页按 F12 → 控制台，看有没有 `[Apple Watcher]` 开头的日志，如果显示「No part numbers set」，检查 `main.js` 里的 `PARTS`。
+确认修改文件后点了扩展的刷新按钮，并刷新了购买页。在购买页按 F12 → 控制台，看有没有 `[Apple Watcher]` 开头的日志，如果显示「No part numbers set」，检查 `main.js` 里的 `PARTS`。如果显示「Another Apple buy page tab is doing the checks」，说明是另一个购买页标签页在负责检测，这是正常的。
 
 **ntfy 收得到，Pushover 没反应？**
 在 `chrome://extensions` 点扩展卡片上的 **Service Worker** 链接，打开后台控制台，再运行一次测试命令，看 `pushover` 开头那行返回什么。返回里 `"status":1` 表示发送成功；如果提示 token 或 user 无效，检查是否复制错了字符。

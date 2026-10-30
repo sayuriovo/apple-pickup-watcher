@@ -15,9 +15,9 @@ When stock is found:
 
 ## Before you start
 
-- This is an unofficial tool. It relies on an undocumented endpoint on Apple's website and may break if Apple changes it.
-- Checking too often gets you temporarily blocked by Apple (status code 541; even normal browsing stops showing pickup info). The default is once every 5 minutes. Please don't set it much lower.
-- The buy page tab must stay open, and the computer must not sleep.
+- This is an unofficial tool. It relies on undocumented endpoints on Apple's website and may break if Apple changes them. Every check uses `/shop/retail/pickup-message` first. It only tries the older `/shop/fulfillment-messages` when the newer one returns something unexpected. If Apple is limiting you (status 541), it waits instead of spending another request on the older endpoint.
+- Checking too often gets you temporarily blocked by Apple (status code 541; even normal browsing stops showing pickup info). The default is about once every 10 minutes, at random intervals. In the author's testing, about every 5 minutes with one search center ran for about two days with only occasional blocks. Going below 5 minutes is not recommended.
+- Chrome must stay open and the computer must not sleep. If the buy page tab is closed or Chrome restarts, the extension reopens it by itself.
 - Currently supports iPhone buy pages on the US Apple Store website only.
 
 ---
@@ -39,8 +39,8 @@ Open `main.js` and edit `PARTS` at the top. These are Apple's internal part numb
 
 1. In Chrome, open the iPhone buy page on Apple's website and pick the model, color and capacity.
 2. Press **F12** (on Mac: Command + Option + I) and open the **Network** tab.
-3. Type `fulfillment` in the filter box, then press **F5** to reload the page.
-4. Click the `fulfillment-messages` request. In its URL, find the value after `parts.0=`, for example `MK1E4LL/A`. If it shows as `MK1E4LL%2FA`, the `%2F` is just `/`.
+3. Type `fulfillment` in the filter box, then press **F5** to reload the page. If nothing shows up, try `pickup-message` instead.
+4. Click the `fulfillment-messages` (or `pickup-message`) request. In its URL, find the value after `parts.0=`, for example `MK1E4LL/A`. If it shows as `MK1E4LL%2FA`, the `%2F` is just `/`.
 5. To watch several colors or capacities, switch the configuration and repeat.
 
 Put them in `main.js`:
@@ -54,12 +54,13 @@ const PARTS = ["MK1E4LL/A", "MK1F4LL/A"];
 Also in `main.js`, edit `CENTERS`:
 
 ```js
-const CENTERS = [{ location: "10001" }, { location: "19103" }];
+const CENTERS = [{ location: "10001" }];
 ```
 
 - For each center, Apple returns the **12 nearest** stores.
-- One ZIP code for where you live is usually enough. To cover stores farther away, add a ZIP code from that area. Results are merged and duplicates removed.
-- More centers means more requests per round and a higher chance of being blocked. Two or three at most is a good limit.
+- Each center costs one request per check, so **one center is recommended**.
+- To cover two areas, try a ZIP code halfway between them first. The "Watcher started" notification tells you how many stores are covered, and the buy page console (F12) lists them in a line starting with `[Apple Watcher] ... Stores:`.
+- You can add more centers, e.g. `[{ location: "10001" }, { location: "19103" }]`. Results are merged and duplicates removed, but every extra center adds requests and raises the chance of being blocked.
 
 ## Step 4: Set up phone notifications
 
@@ -123,9 +124,9 @@ With ntfy set up, besides stock alerts you also get:
 |---|---|
 | Apple watcher started | The buy page is opened and the first check succeeds |
 | Apple watcher still running | Every 12 hours, to confirm it is still working (change `HEARTBEAT_HOURS` in `background.js`) |
-| Apple watcher stopped | The buy page tab is closed, or the browser is running but there has been no successful check for a while (about 20 minutes by default) |
+| Apple watcher stopped | No successful check for a while (about 35 minutes by default), and an automatic page reload didn't fix it |
 | Apple watcher resumed | Checks work again after a stop |
-| Apple watcher blocked | Blocked by Apple 3 times in a row |
+| Apple watcher blocked | Blocked by Apple 3 times in a row (it keeps retrying less often) |
 
 **ntfy limits:** ntfy.sh applies rate limits to free users; see its website for the exact numbers. This extension normally sends only a few messages a day and won't come close.
 
@@ -136,8 +137,8 @@ When the whole browser is closed, the computer sleeps, or the network is down, t
 1. Go to healthchecks.io, sign up and log in.
 2. Click **Add Check** and give it any name, such as `apple-watcher`.
 3. Change the schedule (Period / Grace):
-   - **Period**: `5 minutes` (same as `INTERVAL_MIN` in `main.js`)
-   - **Grace**: `15 minutes`
+   - **Period**: `10 minutes` (same as `INTERVAL_MIN` in `main.js`)
+   - **Grace**: `20 minutes`
 4. Copy the check's **Ping URL**, which looks like `https://hc-ping.com/xxxxxxxx-xxxx-...`.
 5. Open **Integrations** in your project, find **ntfy**, and click **Add Integration**:
    - Topic: your ntfy topic name
@@ -149,7 +150,7 @@ When the whole browser is closed, the computer sleeps, or the network is down, t
    const HEALTHCHECK_URL = "https://hc-ping.com/your-uuid";
    ```
 
-From then on, if the computer goes offline or sleeps for about 20 minutes, Healthchecks.io sends you a "down" notification, and an "up" notification when it recovers. Healthchecks.io also supports Pushover, so you can add it under Integrations if you want offline alerts to ring too.
+From then on, if the computer goes offline or sleeps for about 30 minutes, Healthchecks.io sends you a "down" notification, and an "up" notification when it recovers. Healthchecks.io also supports Pushover, so you can add it under Integrations if you want offline alerts to ring too.
 
 ## Step 5: Start and test
 
@@ -157,7 +158,7 @@ From then on, if the computer goes offline or sleeps for about 20 minutes, Healt
 2. Open the Apple iPhone buy page from Step 2.
 3. Wait about 20 seconds:
    - The tab title gets a prefix like `[No stock 01:04:36]`. This means the check worked.
-   - Your phone gets "Watcher started. Checking N stores."
+   - Your phone gets "Watcher started. Checking N stores (endpoint: pickup)." `pickup` means the newer endpoint works. `fulfillment` means it had to use the older one.
 4. **Test the in-stock alert**: on the **Apple buy page**, press F12 → Console, paste this line and press Enter:
    ```js
    window.postMessage({__asw:true,title:"iPhone in stock",msg:"test"},"*")
@@ -183,9 +184,51 @@ Chrome Settings → Performance → under **"Always keep these sites active"**, 
 
 ## Daily use
 
-- Keep the buy page tab open. Don't close it or navigate away. A separate, minimized Chrome window works well.
-- The page reloads itself every 15 minutes. That is normal.
-- When you get an in-stock alert, order quickly. Popular configurations often sell out within minutes.
+- Leave the buy page tab alone. A separate, minimized Chrome window works well. If you close it by accident, the extension reopens it in the background.
+- **To stop watching, turn the extension off** in `chrome://extensions`. Closing the tab is not enough, because it will be reopened.
+- Checks happen about every 10 minutes. The page reloads itself about every hour (about every 20 minutes if it has to use the older endpoint). The exact times are randomized on purpose.
+- If checks stop for a while, the extension reloads or reopens the page once by itself, and only alerts you if that doesn't help.
+- You can open another Apple buy page tab to shop. Only one buy page tab does the checking, so this doesn't add requests.
+- Tap an in-stock notification to open the buy page, then order quickly. Popular configurations often sell out within minutes. Signing in to the Apple Store app and saving a payment method in advance saves time.
+
+## Restock history
+
+The extension records when each store and model comes into stock and when it sells out. Click the extension icon in the Chrome toolbar to see it. If the icon is hidden, click the puzzle icon and pin Apple Pickup Watcher. You can also open it from the extension's **Details → Extension options**. The page shows:
+
+- a chart of how many restocks happened in each hour of the day, which shows when your nearby stores usually restock,
+- a table of every restock with its store, part number, start time, sell-out time and how long it lasted,
+- buttons to export the history as CSV or clear it.
+
+The history is kept in your browser only and is not sent anywhere. It covers only the time the extension was running and not blocked.
+
+## Settings reference
+
+All settings are at the top of two files, inside the "edit this part only" block.
+
+**`main.js`**
+
+| Setting | Default | What it does |
+|---|---|---|
+| `PARTS` | two example part numbers | Models to watch (Step 2) |
+| `CENTERS` | `[{ location: "10001" }]` | Where to look; each center covers the 12 nearest stores (Step 3) |
+| `CPPART` | `"UNLOCKED/US"` | Carrier version. Usually leave as is |
+| `INTERVAL_MIN` | `10` | Average minutes between checks. Keep it at 5 or higher |
+| `JITTER` | `0.3` | Each wait is randomized by up to ±30% |
+| `RELOAD_MIN` | `60` | Average minutes between page reloads |
+| `RELOAD_MIN_FALLBACK` | `20` | Page reload interval when the last check had to use the older endpoint |
+
+**`background.js`**
+
+| Setting | Default | What it does |
+|---|---|---|
+| `NTFY_TOPIC` | `""` | Your ntfy topic. Empty means ntfy is off |
+| `PUSHOVER_TOKEN`, `PUSHOVER_USER` | `""` | Your Pushover keys. Both empty means Pushover is off |
+| `PUSHOVER_SOUND` | `"persistent"` | Pushover sound. Use `"alarm30"` after uploading `alarm30.mp3` |
+| `HEALTHCHECK_URL` | `""` | Healthchecks.io ping URL. Empty means off |
+| `HEARTBEAT_HOURS` | `12` | How often to send "still running" |
+| `AUTO_REOPEN` | `true` | Reopen the buy page if its tab is closed or Chrome restarts |
+
+After changing any setting, reload the extension in `chrome://extensions` and refresh the buy page.
 
 ## FAQ
 
@@ -195,11 +238,11 @@ Yes, if you set up Pushover (Option B) and turned on Critical Alerts. The alarm 
 **How do I check whether Apple is limiting me?**
 Open the iPhone buy page normally in Chrome and look at the area above the **Add to Bag** button. If you see both a **Delivers to ...** line and a **Pickup: ...** line, you are fine. If both lines are missing and only the Add to Bag button is shown, Apple is temporarily limiting your computer or network. Disable the extension and try again later.
 
-**The tab title shows `[Blocked ...]`. What now?**
-The extension reloads the page and retries after 1 minute by itself, and sends an alert after 3 failures in a row. If it keeps happening, disable the extension first. Then check whether Apple is limiting you, as described in the question above. If you are limited, you can only wait and try again later. When it recovers, increase `INTERVAL_MIN`.
+**The tab title shows `[Blocked ...]` or `[Waiting until ...]`. What now?**
+The extension waits and retries by itself, with longer waits each time (5, 10, 20, then every 30 minutes). It sends no requests while waiting, and sends an alert after 3 failures in a row. To clear the waiting state and try right away, close the buy page tab and open it again in a new tab. If it keeps happening, disable the extension first. Then check whether Apple is limiting you, as described in the question above. If you are limited, you can only wait and try again later. When it recovers, increase `INTERVAL_MIN`.
 
 **The tab title never changes?**
-Make sure you clicked reload on the extension after editing and refreshed the buy page. On the buy page, press F12 → Console and look for lines starting with `[Apple Watcher]`. If it says "No part numbers set", check `PARTS` in `main.js`.
+Make sure you clicked reload on the extension after editing and refreshed the buy page. On the buy page, press F12 → Console and look for lines starting with `[Apple Watcher]`. If it says "No part numbers set", check `PARTS` in `main.js`. If it says "Another Apple buy page tab is doing the checks", another buy page tab is the one checking, which is normal.
 
 **ntfy works but Pushover does nothing?**
 In `chrome://extensions`, click the **Service Worker** link on the extension card to open the background console, then run the test again and look at the line starting with `pushover`. `"status":1` means it was sent. If it says the token or user is invalid, check for copy mistakes.
