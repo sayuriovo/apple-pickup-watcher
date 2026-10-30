@@ -24,7 +24,7 @@
 
 ## 第一步：安装扩展
 
-1. 下载本项目并解压。在 GitHub 上点 **Code → Download ZIP**。解压出来的文件夹可能叫 `apple-pickup-watcher-main`，这是正常的。
+1. 下载本项目并解压。在 GitHub 上点 **Code → Download ZIP**。解压出来的文件夹可能叫 `apple-pickupstock-watcher-main`，这是正常的。
 2. Chrome 地址栏输入 `chrome://extensions` 回车。
 3. 打开右上角的 **开发者模式**。
 4. 点 **加载已解压的扩展程序**，选择解压出来的文件夹（里面能直接看到 `manifest.json` 的那一层）。

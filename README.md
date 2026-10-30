@@ -24,7 +24,7 @@ When stock is found:
 
 ## Step 1: Install the extension
 
-1. Download this project and unzip it. On GitHub, click **Code → Download ZIP**. The unzipped folder may be named `apple-pickup-watcher-main`; that is fine.
+1. Download this project and unzip it. On GitHub, click **Code → Download ZIP**. The unzipped folder may be named `apple-pickupstock-watcher-main`; that is fine.
 2. Go to `chrome://extensions` in Chrome.
 3. Turn on **Developer mode** in the top right.
 4. Click **Load unpacked** and select the unzipped folder (the level where you can see `manifest.json`).
